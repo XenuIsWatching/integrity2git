@@ -14,12 +14,11 @@ if platform.system() == 'Windows':
     import msvcrt
     msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
 
-
 def export_data(string):
     print 'data %d\n%s' % (len(string), string)
 
 def inline_data(filename, code = 'M', mode = '644'):
-    content = open(filename, 'r').read()
+    content = open(filename, 'rb').read()
     if platform.system() == 'Windows':
         #this is a hack'ish way to get windows path names to work git (is there a better way to do this?)
         filename = filename.replace('\\','/')
@@ -50,7 +49,6 @@ def retrieve_revisions(devpath=0):
             revision["seconds"] = int(time.mktime(datetime.strptime(version_cols[2], "%b %d, %Y %I:%M:%S %p").timetuple()))
             revision["description"] = version_cols[5]
             revisions.append(revision)
-
     revisions.reverse() # Old to new
     re.purge()
     return revisions
@@ -62,15 +60,22 @@ def retrieve_devpaths():
     devpaths_re = re.compile('    (.+) \(([0-9][\.0-9]+)\)\n')
     devpath_col = devpaths_re.findall(devpaths)
     re.purge()
+    devpath_col.sort(key=lambda x: map(int, x[1].split('.'))) #order development paths by version
     return devpath_col
 
 def export_to_git(revisions,devpath=0,ancestor=0):
+    abs_sandbox_path = os.getcwd()
+    if not devpath: #this is assuming that devpath will always be executed after the mainline import is finished
+        move_to_next_revision = 0
+    else:
+        move_to_next_revision = 1
     for revision in revisions:
         #revision_col = revision["number"].split('\.')
         mark = convert_revision_to_mark(revision["number"])
-        # Create a build sandbox for the version
-        os.system('si createsandbox --populate -R --project="%s" --projectRevision=%s tmp%d' % (sys.argv[1], revision["number"], mark))
-        os.chdir('tmp%d' % mark) #the reason why a number is added to the end of this is because MKS can sometimes be a piece of crap and doesn't always drop the full file structure when it should, so they all should have unique names
+        if move_to_next_revision:
+            os.system('si retargetsandbox --project="%s" --projectRevision=%s %s/project.pj' % (sys.argv[1], revision["number"], abs_sandbox_path))
+            os.system('si resync --yes --recurse ')
+        move_to_next_revision = 1
         if devpath:
             print 'commit refs/heads/devpath/%s' % devpath
         else:
@@ -96,15 +101,18 @@ def export_to_git(revisions,devpath=0,ancestor=0):
                 if (fullfile.find('mks_checkpoints_to_git') != -1):
                     continue
                 inline_data(fullfile)
-        # Drop the sandbox
-        os.chdir("..")
-        shortname=sys.argv[1].replace('"', '').split('/')[-1]
-        os.system("si dropsandbox -Y -f --delete=all tmp%d/%s" % (mark, shortname))
 
 marks = []
 devpaths = retrieve_devpaths()
 revisions = retrieve_revisions()
+#Create a build sandbox of the first revision
+os.system('si createsandbox --populate --recurse --project="%s" --projectRevision=%s tmp' % (sys.argv[1], revisions[0]["number"]))
+os.chdir('tmp')
 export_to_git(revisions) #export master branch first!!
 for devpath in devpaths:
     devpath_revisions = retrieve_revisions(devpath[0])
     export_to_git(devpath_revisions,devpath[0].replace(' ','_'),devpath[1]) #branch names can not have spaces in git so replace with underscores
+# Drop the sandbox
+shortname=sys.argv[1].replace('"', '').split('/')[-1]
+os.chdir("..")
+os.system("si dropsandbox --yes -f --delete=all tmp/%s" % (shortname))
