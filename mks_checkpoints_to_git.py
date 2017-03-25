@@ -65,6 +65,7 @@ def retrieve_devpaths():
 
 def export_to_git(revisions,devpath=0,ancestor=0):
     abs_sandbox_path = os.getcwd()
+	integrity_file = os.path.basename(sys.argv[1])
     if not devpath: #this is assuming that devpath will always be executed after the mainline import is finished
         move_to_next_revision = 0
     else:
@@ -73,7 +74,7 @@ def export_to_git(revisions,devpath=0,ancestor=0):
         #revision_col = revision["number"].split('\.')
         mark = convert_revision_to_mark(revision["number"])
         if move_to_next_revision:
-            os.system('si retargetsandbox --project="%s" --projectRevision=%s %s/project.pj' % (sys.argv[1], revision["number"], abs_sandbox_path))
+            os.system('si retargetsandbox --project="%s" --projectRevision=%s %s/%s' % (sys.argv[1], revision["number"], abs_sandbox_path), integrity_file)
             os.system('si resync --yes --recurse ')
         move_to_next_revision = 1
         if devpath:
